@@ -1,202 +1,150 @@
-
-import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
+import React, { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Layout } from '@/components/layout/Layout';
-import { courseService, Course } from '@/services/mockData';
-import { useAuth } from '@/contexts/AuthContext';
-import { useToast } from '@/hooks/use-toast';
+import { EnrollButton } from '@/components/courses/EnrollButton';
+import { supabase } from '@/integrations/supabase/client';
+
+interface CourseDetails {
+  id: string;
+  title: string;
+  description: string;
+  location: string;
+  start_date: string;
+  end_date: string;
+  image_url: string | null;
+  slots: number;
+  enrolled_count: number;
+}
 
 const CourseDetail = () => {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const { isAuthenticated, user } = useAuth();
-  const { toast } = useToast();
-  const [course, setCourse] = useState<Course | null>(null);
+  const { id } = useParams();
+  const [course, setCourse] = useState<CourseDetails | null>(null);
   const [loading, setLoading] = useState(true);
-  const [enrolling, setEnrolling] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchCourse = async () => {
       if (!id) return;
-      
+
       try {
-        const data = await courseService.getById(id);
+        const { data, error } = await supabase
+          .from('courses')
+          .select('*')
+          .eq('id', id)
+          .single();
+
+        if (error) {
+          throw error;
+        }
+
         setCourse(data);
-      } catch (error) {
-        console.error('Error fetching course:', error);
-        toast({
-          title: "Xatolik",
-          description: "Kurs ma'lumotlarini yuklab bo'lmadi",
-          variant: "destructive",
-        });
+      } catch (err: any) {
+        console.error('Error fetching course:', err);
+        setError('Kurs ma\'lumotlarini yuklashda xatolik yuz berdi');
       } finally {
         setLoading(false);
       }
     };
 
     fetchCourse();
-  }, [id, toast]);
+  }, [id]);
 
   const formatDate = (dateString: string) => {
-    const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'long', day: 'numeric' };
-    return new Date(dateString).toLocaleDateString('uz-UZ', options);
-  };
-
-  const getSlotsAvailable = (course: Course) => {
-    const available = course.slots - course.enrolledCount;
-    return available > 0 ? available : 0;
-  };
-
-  const handleEnroll = async () => {
-    if (!isAuthenticated) {
-      toast({
-        title: "Ro'yxatdan o'ting",
-        description: "Kursga yozilish uchun avval tizimga kiring",
-        variant: "default",
-      });
-      navigate('/login');
-      return;
-    }
-    
-    if (!course || !user) return;
-    
-    setEnrolling(true);
-    
-    try {
-      const updatedCourse = await courseService.enroll(course.id, user.id);
-      setCourse(updatedCourse);
-      toast({
-        title: "Muvaffaqiyatli",
-        description: "Siz kursga yozildingiz",
-        variant: "default",
-      });
-    } catch (error) {
-      toast({
-        title: "Xatolik",
-        description: error instanceof Error ? error.message : "Kursga yozilishda xatolik yuz berdi",
-        variant: "destructive",
-      });
-    } finally {
-      setEnrolling(false);
-    }
+    if (!dateString) return 'Sana ko\'rsatilmagan';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('uz-UZ');
   };
 
   if (loading) {
     return (
       <Layout>
-        <div className="container mx-auto px-4 py-12 flex justify-center">
-          <p>Yuklanmoqda...</p>
-        </div>
-      </Layout>
-    );
-  }
-
-  if (!course) {
-    return (
-      <Layout>
-        <div className="container mx-auto px-4 py-12">
+        <div className="container mx-auto px-4 py-8">
           <div className="text-center">
-            <h1 className="text-2xl font-bold mb-4">Kurs topilmadi</h1>
-            <Button onClick={() => navigate('/courses')}>Barcha kurslarga qaytish</Button>
+            <p className="text-xl">Yuklanmoqda...</p>
           </div>
         </div>
       </Layout>
     );
   }
 
-  const isAvailable = getSlotsAvailable(course) > 0;
+  if (error || !course) {
+    return (
+      <Layout>
+        <div className="container mx-auto px-4 py-8">
+          <div className="text-center">
+            <p className="text-xl text-red-500">{error || 'Kurs topilmadi'}</p>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
       <div className="container mx-auto px-4 py-8">
-        <Button 
-          variant="outline" 
-          onClick={() => navigate('/courses')}
-          className="mb-4"
-        >
-          ← Barcha kurslarga qaytish
-        </Button>
-        
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2">
-            <div className="rounded-lg overflow-hidden mb-6">
-              <img 
-                src={course.imageUrl} 
-                alt={course.title} 
-                className="w-full h-64 object-cover"
-              />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {/* Course image */}
+          <div className="md:col-span-1">
+            <div className="bg-gray-100 rounded-lg overflow-hidden h-64 md:h-auto">
+              {course.image_url ? (
+                <img 
+                  src={course.image_url} 
+                  alt={course.title} 
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-gray-200">
+                  <span className="text-gray-400">Rasm yo'q</span>
+                </div>
+              )}
             </div>
             
-            <h1 className="text-3xl font-bold mb-4 text-mahalla-dark">{course.title}</h1>
-            
-            <div className="mb-8">
-              <h2 className="text-xl font-semibold mb-3 text-mahalla-primary">Kurs haqida</h2>
-              <p className="text-gray-700 mb-4">{course.description}</p>
-              <p className="text-gray-700">
-                Bu kurs sizga asosiy bilimlarni beradi va amaliy ko'nikmalarni rivojlantiradi.
-                Kursni muvaffaqiyatli yakunlagandan so'ng, sertifikat olasiz va ish topishda yordam beriladi.
-              </p>
-            </div>
-            
-            <div className="mb-8">
-              <h2 className="text-xl font-semibold mb-3 text-mahalla-primary">Kurs dasturi</h2>
-              <ul className="list-disc pl-5 space-y-2 text-gray-700">
-                <li>Asosiy tushunchalar va nazariya</li>
-                <li>Amaliy ko'nikmalar</li>
-                <li>Real loyihalar ustida ishlash</li>
-                <li>Mustaqil amaliyot</li>
-                <li>Yakuniy imtihon</li>
-              </ul>
-            </div>
-          </div>
-          
-          <div>
-            <Card className="sticky top-8">
+            <Card className="mt-4">
               <CardContent className="pt-6">
-                <div className="space-y-6">
+                <div className="space-y-4">
                   <div>
-                    <h3 className="font-semibold mb-2">Kurs ma'lumotlari</h3>
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <p className="text-gray-500">Boshlanish sanasi</p>
-                        <p className="font-medium">{formatDate(course.startDate)}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500">Tugash sanasi</p>
-                        <p className="font-medium">{formatDate(course.endDate)}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500">Joylashuv</p>
-                        <p className="font-medium">{course.location}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500">Bo'sh o'rinlar</p>
-                        <p className="font-medium">
-                          <Badge variant={isAvailable ? "outline" : "destructive"}>
-                            {isAvailable ? getSlotsAvailable(course) : 'To\'lgan'}
-                          </Badge>
-                        </p>
-                      </div>
-                    </div>
+                    <h3 className="text-sm font-medium text-gray-500">Manzil</h3>
+                    <p className="mt-1">{course.location}</p>
                   </div>
                   
-                  <Button 
-                    className="w-full bg-mahalla-primary hover:bg-mahalla-dark"
-                    disabled={!isAvailable || enrolling}
-                    onClick={handleEnroll}
-                  >
-                    {enrolling ? "Kuting..." : isAvailable ? "Kursga yozilish" : "Kurs to'lgan"}
-                  </Button>
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500">Boshlanish sanasi</h3>
+                    <p className="mt-1">{formatDate(course.start_date)}</p>
+                  </div>
                   
-                  <div className="text-sm text-gray-500">
-                    <p>Kursga yozilish uchun avval ro'yxatdan o'ting. Kurs bepul, lekin o'rinlar cheklangan.</p>
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500">Tugash sanasi</h3>
+                    <p className="mt-1">{formatDate(course.end_date)}</p>
+                  </div>
+                  
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500">Bo'sh joylar</h3>
+                    <p className="mt-1">{course.slots - course.enrolled_count} / {course.slots}</p>
+                  </div>
+                  
+                  <div className="pt-2">
+                    <EnrollButton 
+                      courseId={course.id} 
+                      slots={course.slots} 
+                      enrolledCount={course.enrolled_count} 
+                    />
                   </div>
                 </div>
               </CardContent>
             </Card>
+          </div>
+          
+          {/* Course details */}
+          <div className="md:col-span-2">
+            <h1 className="text-3xl font-bold text-mahalla-dark mb-6">{course.title}</h1>
+            
+            <div className="prose max-w-none">
+              <h2 className="text-xl font-semibold mb-4">Kurs haqida</h2>
+              <p className="whitespace-pre-line">{course.description}</p>
+            </div>
+            
+            {/* Additional course information could be added here */}
           </div>
         </div>
       </div>

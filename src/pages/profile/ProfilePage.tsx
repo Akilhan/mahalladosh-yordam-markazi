@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,17 +8,71 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Layout } from '@/components/layout/Layout';
 import { useAuth } from '@/contexts/AuthContext';
 import { User } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+
+interface Course {
+  id: string;
+  title: string;
+  description: string;
+  location: string;
+  start_date: string;
+  end_date: string;
+  image_url: string | null;
+}
 
 const ProfilePage = () => {
   const { user, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
+  const [enrolledCourses, setEnrolledCourses] = useState<Course[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Redirect if not authenticated
-  React.useEffect(() => {
+  useEffect(() => {
     if (!isAuthenticated) {
       navigate('/login');
     }
   }, [isAuthenticated, navigate]);
+
+  // Fetch enrolled courses
+  useEffect(() => {
+    const fetchEnrolledCourses = async () => {
+      if (!user) return;
+      
+      try {
+        setIsLoading(true);
+        const { data: enrollments, error: enrollmentsError } = await supabase
+          .from('enrollments')
+          .select('course_id')
+          .eq('user_id', user.id);
+
+        if (enrollmentsError) {
+          console.error('Error fetching enrollments:', enrollmentsError);
+          return;
+        }
+
+        if (enrollments && enrollments.length > 0) {
+          const courseIds = enrollments.map(e => e.course_id);
+          
+          const { data: courses, error: coursesError } = await supabase
+            .from('courses')
+            .select('*')
+            .in('id', courseIds);
+
+          if (coursesError) {
+            console.error('Error fetching courses:', coursesError);
+          } else {
+            setEnrolledCourses(courses || []);
+          }
+        }
+      } catch (error) {
+        console.error('Error in fetchEnrolledCourses:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchEnrolledCourses();
+  }, [user]);
 
   if (!isAuthenticated || !user) {
     return null;
@@ -30,6 +84,11 @@ const ProfilePage = () => {
       .map(part => part[0])
       .join('')
       .toUpperCase();
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('uz-UZ');
   };
 
   return (
@@ -57,7 +116,7 @@ const ProfilePage = () => {
                 <Button variant="outline" onClick={() => navigate('/courses')}>
                   Kurslarni ko'rish
                 </Button>
-                <Button variant="destructive" onClick={logout}>
+                <Button variant="destructive" onClick={() => logout()}>
                   Tizimdan chiqish
                 </Button>
               </div>
@@ -79,19 +138,65 @@ const ProfilePage = () => {
                     <CardTitle>Ro'yxatdan o'tgan kurslaringiz</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-center py-8 text-gray-500">
-                      <User className="mx-auto h-12 w-12 text-gray-400" />
-                      <h3 className="mt-4 text-lg font-medium">Hozircha kurslar yo'q</h3>
-                      <p className="mt-2 text-sm">
-                        Siz hali hech qanday kursga yozilmagansiz.
-                      </p>
-                      <Button 
-                        onClick={() => navigate('/courses')} 
-                        className="mt-4 bg-mahalla-primary hover:bg-mahalla-dark"
-                      >
-                        Kurslarni ko'rish
-                      </Button>
-                    </div>
+                    {isLoading ? (
+                      <div className="text-center py-8">
+                        <p>Yuklanmoqda...</p>
+                      </div>
+                    ) : enrolledCourses.length > 0 ? (
+                      <div className="space-y-4">
+                        {enrolledCourses.map((course) => (
+                          <Card key={course.id} className="overflow-hidden">
+                            <div className="flex flex-col md:flex-row">
+                              <div className="md:w-1/3 bg-gray-100 h-40 md:h-auto">
+                                {course.image_url ? (
+                                  <img 
+                                    src={course.image_url} 
+                                    alt={course.title} 
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center bg-gray-200">
+                                    <span className="text-gray-400">Rasm yo'q</span>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="md:w-2/3 p-4">
+                                <h3 className="text-lg font-bold">{course.title}</h3>
+                                <p className="text-sm text-gray-600 mt-2">{course.description.substring(0, 100)}...</p>
+                                <div className="mt-4 flex flex-wrap gap-2">
+                                  <span className="text-xs bg-blue-100 text-blue-800 rounded-full px-2 py-1">
+                                    {course.location}
+                                  </span>
+                                  <span className="text-xs bg-green-100 text-green-800 rounded-full px-2 py-1">
+                                    {formatDate(course.start_date)} - {formatDate(course.end_date)}
+                                  </span>
+                                </div>
+                                <Button 
+                                  className="mt-4 bg-mahalla-primary hover:bg-mahalla-dark"
+                                  onClick={() => navigate(`/courses/${course.id}`)}
+                                >
+                                  Batafsil
+                                </Button>
+                              </div>
+                            </div>
+                          </Card>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-gray-500">
+                        <User className="mx-auto h-12 w-12 text-gray-400" />
+                        <h3 className="mt-4 text-lg font-medium">Hozircha kurslar yo'q</h3>
+                        <p className="mt-2 text-sm">
+                          Siz hali hech qanday kursga yozilmagansiz.
+                        </p>
+                        <Button 
+                          onClick={() => navigate('/courses')} 
+                          className="mt-4 bg-mahalla-primary hover:bg-mahalla-dark"
+                        >
+                          Kurslarni ko'rish
+                        </Button>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </TabsContent>
